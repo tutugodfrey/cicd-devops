@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  Create IAM user resource with programmatic access to create resources
+  This user will be added to CircleCI to provision infrastructure in CI/CD pipeline
+Parameters:
+  UserName:
+    Description: The name of user to create
+    Type: String
+    Default: UdugramIamUser
+  AccessKeySerial:
+    Description: >
+      Access Key Serial is used to specify update access key (Key rotation)
+      Key will be rotated when the value is incremented
+    Type: String
+    Default: 1
+    
+ 
+Resources:
+  ProjectIAMUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref UserName
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+  
+  UserAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      Serial: !Ref  AccessKeySerial
+      Status: Active
+      UserName: !Ref ProjectIAMUser
+
+Outputs:
+  ProjectIAMUserName:
+    Description: IAM user with programmatic access
+    Value: !Ref ProjectIAMUser
+ 
+  ProjectUserAccessKey:
+    Description: Access Key of Project user
+    Value: !GetAtt UserAccessKey.SecretAccessKey
+ 
+  ProjectUserAccessKeyId:
+    Description: Access Key Id for Project user
+    Value: !Ref  UserAccessKey
+     
