@@ -1,5 +1,9 @@
 version: 2.1
 
+default_image: &default_image
+  docker:
+    - image: circleci/node:13.8.0
+
 commands:
   destroy-environment:
     description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
@@ -63,8 +67,6 @@ jobs:
           name: Back-end build
           command: |
             cd backend
-            pwd
-            ls -al
             npm install
             npm run build
       - save_cache:
@@ -105,21 +107,34 @@ jobs:
             cd backend
             npm test
             
-  # scan-frontend:
-  #   docker:
-  #     # Docker image here
-  #   steps:
-  #     # Checkout code from git
-  #     # Restore from cache
-  #     # Your job code here
+  scan-frontend:
+    <<: *default_image
+    steps:
+      # Checkout code from git
+      - checkout
 
-  # scan-backend:
-  #   docker:
-  #     # Docker image here
-  #   steps:
-  #     # Checkout code from git
-  #     # Restore from cache
-  #     # Your job code here
+      # Restore from cache
+      - restore_cache:
+          keys: [frontend_build]
+
+      # Your job code here
+      - run:
+          name: Audit frontend
+          command: |
+            cd frontend
+            npm audit --audit-level=critical
+            
+  scan-backend:
+    <<: *default_image
+    steps:
+      - checkout
+      - restore_cache:
+          keys: [backend_build]
+      - run:
+          name: Audit backend
+          command: |
+            cd backend
+            npm audit --audit-level=critical
 
   # deploy-infrastructure:
   #   docker:
@@ -296,10 +311,10 @@ workflows:
           requires: [build-frontend]
       - test-backend:
           requires: [build-backend]
-      # - scan-backend:
-      #     requires: [build-backend]
-      # - scan-frontend:
-      #     requires: [build-frontend]
+      - scan-backend:
+          requires: [build-backend]
+      - scan-frontend:
+          requires: [build-frontend]
       # - deploy-infrastructure:
       #     requires: [test-frontend, test-backend, scan-frontend, scan-backend]
       #     filters:
