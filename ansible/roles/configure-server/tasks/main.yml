@@ -1,0 +1,15 @@
+---
+- name: Configure Server
+  become: yes
+  copy:
+    src: config-script.sh
+    dest: /home/ubuntu/config-script.sh
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: 0774
+
+- name: Execute script files
+  become: yes
+  become_method: sudo
+  shell:
+    /home/ubuntu/config-script.sh
