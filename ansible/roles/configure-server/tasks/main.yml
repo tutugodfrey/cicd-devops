@@ -1,0 +1,16 @@
+---
+- name: Configure Server
+  become: yes
+  copy:
+    src: files/config-script.sh
+    dest: /home/"{{ ansible_user }}"
+    owner: "{{ ansible_user }}""
+    group: "{{ ansible_user }}"
+
+- name: Execute script files
+  become: yes
+  shell:
+    ./config-script.sh
+    
+
+  
