@@ -5,12 +5,26 @@ Parameters:
   ID:
     Description: Unique identifier.
     Type: String
+  ProjectName:
+    Description: Title of the project stack will be applied to
+    Type: String
+    Default: Udapeople
+  EnvironmentName:
+    Description: The environmnt the the stack is being use in
+    Type: String
+    Default: Dev
+  S3BucketName:
+    Description: The bucket name that hold app artifacts
+    Type: String
+    Default: udapeople-568be999-1831-473c-9750-d7d4ccb70533
 
 Resources:
   WebsiteBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "udapeople-${ID}"
+      # BucketName:
+      #   Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-S3-BucketName
       AccessControl: PublicRead
       WebsiteConfiguration:
         IndexDocument: index.html
