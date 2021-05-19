@@ -29,9 +29,3 @@ Outputs:
     Value: !Ref S3Bucket
     Export:
       Name: !Sub ${ProjectName}-${EnvironmentName}-S3-BucketName
-  
-  S3DomainName:
-    Description: Origin url for access the bucket, origin to cloudfront
-    Value: !GetAtt S3Bucket.DomainName
-    Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-S3-DomainName
