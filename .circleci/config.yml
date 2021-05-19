@@ -3,10 +3,12 @@ version: 2.1
 default_image: &default_image
   docker:
     - image: circleci/node:13.8.0
+  working_directory: ~/project
 
 amazoncli_image: &amazoncli_image
   docker:
     - image: amazon/aws-cli
+  working_directory: ~/project
 
 commands:
   destroy-environment:
@@ -55,10 +57,9 @@ jobs:
           name: Build front-end
           command: |
             cd frontend
-            pwd
-            ls -al
             npm install
             npm run build
+        
       - save_cache:
           paths: [frontend/node_modules]
           key: frontend-build
@@ -220,39 +221,46 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            # Your code here
-            ls -al
             apk add --update ansible
             cat ansible/inventory.txt
-            echo About to install packages
+
       - run:
           name: Configure server with ansible
           command: |
-            # Your code here
             cd ansible
-            sed -i 's/TYPEORM_DB_PASSWORD/${TYPEORM_PASSWORD}/' roles/configure-server/files/config-script.sh
-            echo !$
+            sed -i "s/TYPEORM_PASSWORD_STRING/${TYPEORM_PASSWORD}/" roles/configure-server/tasks/main.yml
+            sed -i "s/TYPEORM_USERNAME_STRING/${TYPEORM_USERNAME}/" roles/configure-server/tasks/main.yml
+            sed -i "s/TYPEORM_HOST_STRING/${TYPEORM_HOST}/" roles/configure-server/tasks/main.yml
+            sed -i "s/TYPEORM_DATABASE_STRING/${TYPEORM_DATABASE}/" roles/configure-server/tasks/main.yml
             ansible-playbook -i inventory.txt configure-server.yml
-
+            cat roles/configure-server/tasks/main.yml
+  
       # Rollback on failure 
       - destroy-environment
 
-  # run-migrations:
-  #   docker:
-  #     # Docker image here that supports NodeJS
-  #   steps:
-  #     # Checkout code from git
-  #     - run:
-  #         name: Run migrations
-  #         command: |
-  #           # Your code here
-  #           exit 1
-  #     - run:
-  #         name: Send migration results to memstash
-  #         command: |
-  #           # Your code here
-  #           exit 1
-  #   # Here's where you will add some code to rollback on failure      
+  run-migrations:
+    <<: *default_image
+    steps:
+      - checkout
+      
+      # - restore_cache:
+      #     keys: [backend_build]
+      - run:
+          name: Run migrations
+          command: |
+            cd backend
+            npm install
+            npm run migrations | tee migration_output.txt
+            # Check the exit code of migration
+            echo Exit code for migrations is: $?
+  
+      - run:
+          name: Send migration results to memstash
+          command: |
+            grep "No migrations are pending" backend/migration_output.txt
+            if [[ $? == 0 ]]; then curl -H "Content-Type: text/plain" -H "token: 80f3da0c-ae7e-4089-aca3-53714d463f2c" --request PUT --data "1" https://api.memstash.io/values/migration_${CIRCLE_WORKFLOW_ID}; fi;
+            echo $(curl -H "token: 80f3da0c-ae7e-4089-aca3-53714d463f2c" --request GET https://api.memstash.io/values/migration_${CIRCLE_WORKFLOW_ID})
+    # Here's where you will add some code to rollback on failure      
 
   # deploy-frontend:
   #   docker:
@@ -367,11 +375,11 @@ workflows:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
             branches:
-              only: [develop, configure-infrastructure, test-feature-branch]
+              only: [develop, test-feature-branch, configure-migration-jobs]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
-      # - run-migrations:
-      #     requires: [configure-infrastructure]
+      - run-migrations:
+          requires: [configure-infrastructure]
       # - deploy-frontend:
       #     requires: [run-migrations]
       # - deploy-backend:
