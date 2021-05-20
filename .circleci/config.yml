@@ -11,6 +11,12 @@ amazoncli_image: &amazoncli_image
   working_directory: ~/project
 
 commands:
+  get_backend_ip:
+    description: Get the Ip address of the backend server
+    steps:
+      - run: export BACKEND_IP_ADDRESS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME_BE --query "Stacks[*].Outputs[?OutputKey=='BackendIP'].OutputValue" --output text)
+
+    
   destroy-environment:
     description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
     parameters:
@@ -262,25 +268,46 @@ jobs:
             echo $(curl -H "token: 80f3da0c-ae7e-4089-aca3-53714d463f2c" --request GET https://api.memstash.io/values/migration_${CIRCLE_WORKFLOW_ID})
     # Here's where you will add some code to rollback on failure      
 
-  # deploy-frontend:
-  #   docker:
-  #     # Docker image here that supports AWS CLI
-  #   steps:
-  #     # Checkout code from git
-  #     - run:
-  #         name: Install dependencies
-  #         command: |
-  #           # your code here
-  #     - run:
-  #         name: Get backend url
-  #         command: |
-  #           # your code here
-  #           export API_URL="http://${BACKEND_IP}:3030"
-  #           echo "${API_URL}"
-  #     - run:
-  #         name: Deploy frontend objects
-  #         command: |
-  #           # your code here
+  deploy-frontend:
+    <<: *amazoncli_image
+    steps:
+      # Checkout code from git
+      - checkout
+      - run:
+          name: Install nodejs
+          command: |
+            yum install -y gcc-c++ make;
+            curl -sL https://rpm.nodesource.com/setup_15.x | bash -;
+            yum install nodejs -y;
+      - run:
+          name: Install dependencies
+          command: |
+            cd frontend
+            npm install
+      - get_backend_ip
+      - run:
+          name: Get backend url
+          command: |
+            cd frontend
+            echo BACKEND_IP_ADDRESS IS: $BACKEND_IP_ADDRESS :::::: ${BACKEND_IP_ADDRESS}
+            export STACK_NAME_BE=back-end-stack-${CIRCLE_WORKFLOW_ID}
+            export BACKEND_IP_ADDRESS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME_BE --query "Stacks[*].Outputs[?OutputKey=='BackendIP'].OutputValue" --output text)
+            export API_URL="http://${BACKEND_IP_ADDRESS}:3030"
+            echo "${API_URL}"
+            npm run build
+      - run:
+          name: Deploy frontend objects
+          command: |
+            cd frontend
+            ls -al dist
+            STACK_NAME=front-end-stack-${CIRCLE_WORKFLOW_ID}
+            OUTPUT_KEY=WebsiteBucketName
+            export BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[*].Outputs[?OutputKey=='$OUTPUT_KEY'].OutputValue" --output text)
+            echo $BUCKET_NAME
+            aws s3 sync dist/ s3://$BUCKET_NAME/
+            OUTPUT_KEY=WebsiteURL
+            WEBSITE_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[*].Outputs[?OutputKey=='$OUTPUT_KEY'].OutputValue" --output text)
+            echo WEBSITE URL is: $WEBSITE_URL
   #     # Here's where you will add some code to rollback on failure      
                     
   # deploy-backend:
@@ -375,13 +402,13 @@ workflows:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
             branches:
-              only: [develop, test-feature-branch, configure-migration-jobs]
+              only: [develop, test-feature-branch, deploy-frontend]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
       - run-migrations:
           requires: [configure-infrastructure]
-      # - deploy-frontend:
-      #     requires: [run-migrations]
+      - deploy-frontend:
+          requires: [run-migrations]
       # - deploy-backend:
       #     requires: [run-migrations]
       # - smoke-test:

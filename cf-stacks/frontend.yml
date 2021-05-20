@@ -43,6 +43,10 @@ Resources:
           Resource: !Join ['', ['arn:aws:s3:::', !Ref 'WebsiteBucket', /*]]
 
 Outputs:
+  WebsiteBucketName:
+    Value: !Ref WebsiteBucket
+    Description: The name of the bucket created
+
   WebsiteURL:
     Value: !GetAtt WebsiteBucket.WebsiteURL
     Description: URL for website hosted on S3
