@@ -1,14 +1,4 @@
 ---
-# - environment:
-#     ENVIRONMENT: production
-#     TYPEORM_CONNECTION: postgres
-#     TYPEORM_ENTITIES: ./src/modules/domain/**/*.entity.ts
-#     TYPEORM_PORT: 5432
-#     TYPEORM_HOST: TYPEORM_HOST_STRING
-#     TYPEORM_USERNAME: TYPEORM_USERNAME_STRING
-#     TYPEORM_PASSWORD: TYPEORM_PASSWORD_STRING
-#     TYPEORM_DATABASE: TYPEORM_DATABASE_STRING
-
 - name: Configure Server
   become: yes
   copy:
