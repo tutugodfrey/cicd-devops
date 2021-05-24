@@ -1,16 +1,22 @@
 ---
+- name: Copy backend dir
+  become: yes
+  file:
+    path: /home/ubuntu/backend
+    state: directory
+
 - name: Copy dist folder
   become: yes
   copy:
-    src: dist
-    dest: /home/ubuntu/project
+    src: artifact.tar.gz
+    dest: /home/ubuntu/backend/artifact.tar.gz
     force: yes
 
 - name: Copy env file
   become: yes
   copy:
     src: .env
-    dest: /home/ubuntu/project/.env
+    dest: /home/ubuntu/backend/.env
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
 
@@ -21,6 +27,9 @@
       executable: /bin/bash
     pwd
     ls -al
-    cd /home/ubuntu/project
+    cd /home/ubuntu/backend
     echo It works > testit.txt
-    # pm2 start main.js
+    tar -xvf artifact.tar.gz
+    npm install
+    sleep 5
+    pm2 start npm --no-automation --name "backend" -- run start
