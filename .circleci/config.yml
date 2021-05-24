@@ -83,9 +83,16 @@ jobs:
             cd backend
             npm install
             npm run build
-      - save_cache:
-          paths: [backend/node_modules]
-          key: backend-build
+  
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - project/backend/dist
+ 
+      # - save_cache:
+      #     paths: [backend/node_modules, backend/dist]
+      #     key: backend-build
+        
 
   test-frontend:
     docker:
@@ -249,8 +256,6 @@ jobs:
     steps:
       - checkout
       
-      # - restore_cache:
-      #     keys: [backend_build]
       - run:
           name: Run migrations
           command: |
@@ -310,22 +315,63 @@ jobs:
             echo WEBSITE URL is: $WEBSITE_URL
   #     # Here's where you will add some code to rollback on failure      
                     
-  # deploy-backend:
-  #   docker:
-  #     # Docker image here that supports Ansible
-  #   steps:
-  #     # Checkout code from git
-  #     # Add ssh keys with fingerprint
-  #     # attach workspace
-  #     - run:
-  #         name: Install dependencies
-  #         command: |
-  #           # your code here
-  #     - run:
-  #         name: Deploy backend
-  #         command: |
-  #           # your code here
-  #     # Here's where you will add some code to rollback on failure  
+  deploy-backend:
+    docker:
+      - image: python:3.7-alpine3.11
+    working_directory: ~/project
+
+    steps:
+      - checkout
+      
+      - add_ssh_keys:
+          fingerprints: ["f7:32:14:af:90:cf:7d:df:ab:c7:ba:e6:d7:10:03:6e"]
+
+      - attach_workspace:
+          at: ~/
+  
+      - run:
+          name: Install dependencies
+          command: |
+            pwd
+            ls -al
+            ls -al backend
+            apk add ansible
+            cat ansible/inventory.txt
+
+      - run:
+          name: Copy dist to ansible directory
+          command: |
+            pwd
+            mkdir -p ansible/roles/deploy/files/dist
+            cat > ansible/roles/deploy/files/.env \<<EOF
+            ENVIRONMENT=production
+            TYPEORM_CONNECTION=postgres
+            TYPEORM_ENTITIES=./src/modules/domain/**/*.entity.ts
+            TYPEORM_PORT=5432
+            TYPEORM_HOST=TYPEORM_HOST_STRING
+            TYPEORM_USERNAME=TYPEORM_USERNAME_STRING
+            TYPEORM_PASSWORD=TYPEORM_PASSWORD_STRING
+            TYPEORM_DATABASE=TYPEORM_DATABASE_STRING
+            EOF
+            cp -r backend/dist ansible/roles/deploy/files/dist
+            
+      - run:
+          name: Update environment variables
+          command: |
+            ls -al
+            cd ansible
+            sed -i "s/TYPEORM_PASSWORD_STRING/${TYPEORM_PASSWORD}/" roles/deploy/files/.env
+            sed -i "s/TYPEORM_USERNAME_STRING/${TYPEORM_USERNAME}/" roles/deploy/files/.env
+            sed -i "s/TYPEORM_HOST_STRING/${TYPEORM_HOST}/" roles/deploy/files/.env
+            sed -i "s/TYPEORM_DATABASE_STRING/${TYPEORM_DATABASE}/" roles/deploy/files/.env
+            cat roles/configure-server/tasks/main.yml
+        
+      - run:
+          name: Deploy backend
+          command: |
+            cd ansible
+            ansible-playbook -i inventory.txt deploy-backend.yml
+      # Here's where you will add some code to rollback on failure  
 
   # smoke-test:
   #   docker:
@@ -402,15 +448,15 @@ workflows:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
             branches:
-              only: [develop, test-feature-branch, deploy-frontend]
+              only: [develop, test-feature-branch, deploy-backend]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
       - run-migrations:
           requires: [configure-infrastructure]
       - deploy-frontend:
           requires: [run-migrations]
-      # - deploy-backend:
-      #     requires: [run-migrations]
+      - deploy-backend:
+          requires: [run-migrations]
       # - smoke-test:
       #     requires: [deploy-backend, deploy-frontend]
       # - cloudfront-update:

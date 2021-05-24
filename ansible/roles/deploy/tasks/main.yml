@@ -1,0 +1,26 @@
+---
+- name: Copy dist folder
+  become: yes
+  copy:
+    src: dist
+    dest: /home/ubuntu/project
+    force: yes
+
+- name: Copy env file
+  become: yes
+  copy:
+    src: .env
+    dest: /home/ubuntu/project/.env
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: Start the application
+  become: yes
+  shell: |
+    args:
+      executable: /bin/bash
+    pwd
+    ls -al
+    cd /home/ubuntu/project
+    echo It works > testit.txt
+    # pm2 start main.js
