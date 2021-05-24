@@ -15,7 +15,6 @@ commands:
     description: Get the Ip address of the backend server
     steps:
       - run: export BACKEND_IP_ADDRESS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME_BE --query "Stacks[*].Outputs[?OutputKey=='BackendIP'].OutputValue" --output text)
-
     
   destroy-environment:
     description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
@@ -201,12 +200,14 @@ jobs:
 
             echo InstanceIP = $BACKEND_IP_ADDRESS
             echo InstanceId = $INSTANCE_ID
+            echo BACKEND_IP=$BACKEND_IP_ADDRESS >> urls.txt
             echo $BACKEND_IP_ADDRESS >> ansible/inventory.txt
 
       - persist_to_workspace:
           root: ~/
           paths:
             - project/ansible/inventory.txt
+            - project/urls.txt
  
       - run:
           name: Rollback - elete Infrastructure on failure
@@ -278,18 +279,26 @@ jobs:
     steps:
       # Checkout code from git
       - checkout
+  
       - run:
           name: Install nodejs
           command: |
+            yum install tar gzip -y
             yum install -y gcc-c++ make;
             curl -sL https://rpm.nodesource.com/setup_15.x | bash -;
             yum install nodejs -y;
+
+      - attach_workspace:
+          at: ~/
+          
       - run:
           name: Install dependencies
           command: |
             cd frontend
             npm install
+  
       - get_backend_ip
+
       - run:
           name: Get backend url
           command: |
@@ -300,9 +309,11 @@ jobs:
             export API_URL="http://${BACKEND_IP_ADDRESS}:3030"
             echo "${API_URL}"
             npm run build
+
       - run:
           name: Deploy frontend objects
           command: |
+            ls -al
             cd frontend
             ls -al dist
             STACK_NAME=front-end-stack-${CIRCLE_WORKFLOW_ID}
@@ -312,7 +323,15 @@ jobs:
             aws s3 sync dist/ s3://$BUCKET_NAME/
             OUTPUT_KEY=WebsiteURL
             WEBSITE_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[*].Outputs[?OutputKey=='$OUTPUT_KEY'].OutputValue" --output text)
-            echo WEBSITE URL is: $WEBSITE_URL
+            cat ../urls.txt
+            echo WEBSITE_URL=$WEBSITE_URL >> ../urls.txt
+            cat ../urls.txt
+            
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - project/urls.txt
+          
   #     # Here's where you will add some code to rollback on failure      
                     
   deploy-backend:
@@ -378,27 +397,60 @@ jobs:
             ansible-playbook -i inventory.txt deploy-backend.yml
       # Here's where you will add some code to rollback on failure  
 
-  # smoke-test:
-  #   docker:
-  #     # Lightweight Docker image 
-  #   steps:
-  #     # Checkout code from git
-  #     - run:
-  #         name: Install dependencies
-  #         command: |
-  #           # your code here
-  #     - run:
-  #         name: Get backend url
-  #         command: |
-  #           # your code here
-  #     - run:
-  #         name: Backend smoke test.
-  #         command: |
-  #           # your code here
-  #     - run:
-  #         name: Frontend smoke test.
-  #         command: |
-  #           # your code here
+  smoke-test:
+    docker:
+      - image: ubuntu:latest
+    steps:
+      - checkout
+
+      - attach_workspace:
+          at: ~/
+
+      - run:
+          name: Install dependencies
+          command: |
+            apt update -y
+            apt install tar gzip -y
+            apt install curl -y
+
+      - run:
+          name: Get backend url
+          command: |
+            ls -al
+            cat urls.txt
+            # export the variables from the urls.txt
+            export $(grep BACKEND_IP urls.txt)
+            export $(grep WEBSITE_URL urls.txt)
+
+      - run:
+          name: Backend smoke test.
+          command: |
+            cat urls.txt
+            export $(grep BACKEND_IP urls.txt)
+            echo $BACKEND_IP
+            curl http://${BACKEND_IP}:3030/api/status | tee test_be.txt
+            grep ok test_be.txt
+            if [[ $? == 0 ]]
+            then
+              exit 0
+            else
+              exit 1
+            fi
+
+      - run:
+          name: Frontend smoke test.
+          command: |
+            cat urls.txt
+            export $(grep WEBSITE_URL urls.txt)
+            echo $WEBSITE_URL
+            curl ${WEBSITE_URL} | tee test_fe.txt
+            grep Welcome test_fe.txt
+            if [[ $? == 0 ]]
+            then
+              exit 0
+            else
+              exit 1
+            fi
   #     # Here's where you will add some code to rollback on failure  
 
   # cloudfront-update:
@@ -453,7 +505,7 @@ workflows:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
             branches:
-              only: [develop, test-feature-branch, fix-backend-deploy]
+              only: [develop, test-feature-branch, smoke-test]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
       - run-migrations:
@@ -462,8 +514,8 @@ workflows:
           requires: [run-migrations]
       - deploy-backend:
           requires: [run-migrations]
-      # - smoke-test:
-      #     requires: [deploy-backend, deploy-frontend]
+      - smoke-test:
+          requires: [deploy-backend, deploy-frontend]
       # - cloudfront-update:
       #     requires: [smoke-test]
       # - cleanup:
