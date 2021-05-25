@@ -33,8 +33,7 @@ commands:
             aws s3 rm s3://$BUCKET_NAME --recursive
             aws cloudformation delete-stack --stack-name $STACK_NAME_BE
             aws cloudformation delete-stack --stack-name $STACK_NAME_FE
-
-
+  
   revert-migrations:
     description: Revert the last migration if successfully run in the current workflow.
     parameters:
@@ -43,17 +42,20 @@ commands:
       - run:
           name: Revert migrations
           # Add when this will run
+          when: on_fail
           command: |
-            # Curl command here to see if there was a successful migration associated with the workflow id, store result in SUCCESS variable
-            SUCCESS = 1
+            # Check migration result stored in memstash
+            SUCCESS=$(curl -H "token: 80f3da0c-ae7e-4089-aca3-53714d463f2c" --request GET https://api.memstash.io/values/migration_${CIRCLE_WORKFLOW_ID})
+            echo $SUCCESS
             if(( $SUCCESS==1 )); 
             then
-            #  cd ~/project/backend
-            #  npm install
-            #  Add revert code here. You can find this in the Getting Started section.
-              exit 1
+              cd ~/project/backend
+              ls -al
+              npm install
+              # Revert any successful migration
+              npm run migrations:revert
             fi
-            
+
 jobs:
   build-frontend:
     docker:
@@ -346,6 +348,7 @@ jobs:
           
       # Rollback on failure
       - destroy-environment
+      - revert-migrations
 
   deploy-backend:
     docker:
@@ -367,11 +370,14 @@ jobs:
             pwd
             ls -al
             ls -al backend
-            apk add ansible curl
+            apk add ansible curl nodejs npm
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
             ./aws/install
             cat ansible/inventory.txt
+            which python
+            node --version
+            npm --version
 
       - run:
           name: Copy artifacts to ansible directory
@@ -414,10 +420,12 @@ jobs:
   
       # Rollback on failure
       - destroy-environment
+      - revert-migrations
 
   smoke-test:
-    docker:
-      - image: ubuntu:latest
+    <<: *default_image
+    # docker:
+    #   - image: ubuntu:latest
     steps:
       - checkout
 
@@ -427,12 +435,14 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            apt update -y
-            apt install tar gzip unzip -y
-            apt install curl -y
+            sudo apt update -y
+            sudo apt install tar gzip unzip -y
+            sudo apt install curl -y
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
-            ./aws/install
+            sudo ./aws/install
+            which python3
+            which python
       - run:
           name: Get backend url
           command: |
@@ -474,12 +484,13 @@ jobs:
   
       # Rollback on failure 
       - destroy-environment
+      - revert-migrations
 
   # cloudfront-update:
-  #   docker:
-  #     # Docker image here that supports AWS CLI
+  #   <<: *amazoncli_image
+
   #   steps:
-  #     # Checkout code from git
+  #     - checkout
   #     - run:
   #         name: Install dependencies
   #         command: |
@@ -488,7 +499,9 @@ jobs:
   #         name: Update cloudfront distribution
   #         command: |
   #           # your code here
-  #     # Here's where you will add some code to rollback on failure  
+
+  #     # Rollback on failure 
+  #     - destory-environment
 
 # cleanup:
 #     docker:
@@ -527,7 +540,7 @@ workflows:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
             branches:
-              only: [develop, test-feature-branch, rollback-on-fails]
+              only: [develop, test-feature-branch, undo-migration-on-failure]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
       - run-migrations:
