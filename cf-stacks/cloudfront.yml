@@ -2,21 +2,12 @@ Description: >
   Cloudfront distribution for UdaPeople.
 
 Parameters:
-  ProjectName:
-    Description: Title of the project stack will be applied to
+  ID:
+    Description: Unique identifier.
     Type: String
-    Default: Udapeople
-  EnvironmentName:
-    Description: The environmnt the the stack is being use in
-    Type: String
-    Default: Dev
-  # WorkflowID:
-  #   Description: Unique identifier.
-  #   Type: String
-
+    Default: 1
 
 Resources:
-  
   CloudFrontOriginAccessIdentity:
     Type: "AWS::CloudFront::CloudFrontOriginAccessIdentity"
     Properties:
@@ -28,9 +19,7 @@ Resources:
     Properties:
       DistributionConfig:
         Origins:
-          # - DomainName: !Sub "udapeople-${WorkflowID}.s3.amazonaws.com"
-          - DomainName:
-              Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-S3-DomainName
+          - DomainName: !Sub "udapeople-${ID}.s3.amazonaws.com"
             Id: webpage
             S3OriginConfig:
               OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}"
@@ -43,11 +32,12 @@ Resources:
           ViewerProtocolPolicy: allow-all
 
 Outputs:
-  WorkflowID:
-    # Value: !Sub ${WorkflowID}
-    Value:
-      # Value is exported from S3 stack
-      Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-S3-BucketName
+  ID:
+    Value: !Sub ${ID}
     Description: URL for website hosted on S3
     Export:
-      Name: WorkflowID
+      Name: ID
+  
+  CloudfrontURL:
+    Description: DNS to access the website
+    Value: !GetAtt WebpageCDN.DomainName
