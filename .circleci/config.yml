@@ -27,6 +27,10 @@ commands:
           command: |
             export STACK_NAME_BE=back-end-stack-${CIRCLE_WORKFLOW_ID}
             export STACK_NAME_FE=front-end-stack-${CIRCLE_WORKFLOW_ID}
+            OUTPUT_KEY=WebsiteBucketName
+            export BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name $STACK_NAME_FE --query "Stacks[*].Outputs[?OutputKey=='$OUTPUT_KEY'].OutputValue" --output text)
+            echo $BUCKET_NAME
+            aws s3 rm s3://$BUCKET_NAME --recursive
             aws cloudformation delete-stack --stack-name $STACK_NAME_BE
             aws cloudformation delete-stack --stack-name $STACK_NAME_FE
 
@@ -87,11 +91,6 @@ jobs:
           root: ~/
           paths:
             - project/backend/dist
- 
-      # - save_cache:
-      #     paths: [backend/node_modules, backend/dist]
-      #     key: backend-build
-        
 
   test-frontend:
     docker:
@@ -102,7 +101,7 @@ jobs:
       # Restore from cache
       - restore_cache:
           keys: [frontend-build]
-      # Your job code here
+
       - run:
           name: Run frontend test
           command: |
@@ -208,15 +207,16 @@ jobs:
           paths:
             - project/ansible/inventory.txt
             - project/urls.txt
- 
-      - run:
-          name: Rollback - elete Infrastructure on failure
-          command: |
-            export STACK_NAME_BE=back-end-stack-${CIRCLE_WORKFLOW_ID}
-            export STACK_NAME_FE=front-end-stack-${CIRCLE_WORKFLOW_ID}
-            aws cloudformation delete-stack --stack-name $STACK_NAME_BE
-            aws cloudformation delete-stack --stack-name $STACK_NAME_FE
-          when: on_fail
+
+      - destroy-environment
+      # - run:
+      #     name: Rollback - elete Infrastructure on failure
+      #     command: |
+      #       export STACK_NAME_BE=back-end-stack-${CIRCLE_WORKFLOW_ID}
+      #       export STACK_NAME_FE=front-end-stack-${CIRCLE_WORKFLOW_ID}
+      #       aws cloudformation delete-stack --stack-name $STACK_NAME_BE
+      #       aws cloudformation delete-stack --stack-name $STACK_NAME_FE
+      #     when: on_fail
             
 
   configure-infrastructure:
@@ -235,7 +235,10 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            apk add --update ansible
+            apk add --update ansible curl
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            ./aws/install
             cat ansible/inventory.txt
 
       - run:
@@ -258,6 +261,13 @@ jobs:
       - checkout
       
       - run:
+          name: Install  awscli
+          command: |
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+      
+      - run:
           name: Run migrations
           command: |
             cd backend
@@ -272,19 +282,21 @@ jobs:
             grep "No migrations are pending" backend/migration_output.txt
             if [[ $? == 0 ]]; then curl -H "Content-Type: text/plain" -H "token: 80f3da0c-ae7e-4089-aca3-53714d463f2c" --request PUT --data "1" https://api.memstash.io/values/migration_${CIRCLE_WORKFLOW_ID}; fi;
             echo $(curl -H "token: 80f3da0c-ae7e-4089-aca3-53714d463f2c" --request GET https://api.memstash.io/values/migration_${CIRCLE_WORKFLOW_ID})
-    # Here's where you will add some code to rollback on failure      
+
+      # Rollback on failure
+      - destroy-environment
 
   deploy-frontend:
     <<: *amazoncli_image
     steps:
       # Checkout code from git
       - checkout
-  
+
       - run:
           name: Install nodejs
           command: |
             yum install tar gzip -y
-            yum install -y gcc-c++ make;
+            yum install -y gcc-c++ make curl;
             curl -sL https://rpm.nodesource.com/setup_15.x | bash -;
             yum install nodejs -y;
 
@@ -332,8 +344,9 @@ jobs:
           paths:
             - project/urls.txt
           
-  #     # Here's where you will add some code to rollback on failure      
-                    
+      # Rollback on failure
+      - destroy-environment
+
   deploy-backend:
     docker:
       - image: python:3.7-alpine3.11
@@ -341,7 +354,7 @@ jobs:
 
     steps:
       - checkout
-      
+
       - add_ssh_keys:
           fingerprints: ["f7:32:14:af:90:cf:7d:df:ab:c7:ba:e6:d7:10:03:6e"]
 
@@ -354,7 +367,10 @@ jobs:
             pwd
             ls -al
             ls -al backend
-            apk add ansible
+            apk add ansible curl
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            ./aws/install
             cat ansible/inventory.txt
 
       - run:
@@ -395,7 +411,9 @@ jobs:
           command: |
             cd ansible
             ansible-playbook -i inventory.txt deploy-backend.yml
-      # Here's where you will add some code to rollback on failure  
+  
+      # Rollback on failure
+      - destroy-environment
 
   smoke-test:
     docker:
@@ -410,9 +428,11 @@ jobs:
           name: Install dependencies
           command: |
             apt update -y
-            apt install tar gzip -y
+            apt install tar gzip unzip -y
             apt install curl -y
-
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            ./aws/install
       - run:
           name: Get backend url
           command: |
@@ -451,7 +471,9 @@ jobs:
             else
               exit 1
             fi
-  #     # Here's where you will add some code to rollback on failure  
+  
+      # Rollback on failure 
+      - destroy-environment
 
   # cloudfront-update:
   #   docker:
@@ -505,7 +527,7 @@ workflows:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
             branches:
-              only: [develop, test-feature-branch, smoke-test]
+              only: [develop, test-feature-branch, rollback-on-fails]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
       - run-migrations:
