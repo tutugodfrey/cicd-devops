@@ -219,14 +219,14 @@ jobs:
 
             echo InstanceIP = $BACKEND_IP_ADDRESS
             echo InstanceId = $INSTANCE_ID
-            echo BACKEND_IP=$BACKEND_IP_ADDRESS >> urls.txt
+            echo BACKEND_IP=$BACKEND_IP_ADDRESS >> ~/.env
             echo $BACKEND_IP_ADDRESS >> ansible/inventory.txt
 
       - persist_to_workspace:
           root: ~/
           paths:
             - project/ansible/inventory.txt
-            - project/urls.txt
+            - .env
 
       - destroy-environment
 
@@ -339,14 +339,14 @@ jobs:
             aws s3 sync dist/ s3://$BUCKET_NAME/
             OUTPUT_KEY=WebsiteURL
             WEBSITE_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query "Stacks[*].Outputs[?OutputKey=='$OUTPUT_KEY'].OutputValue" --output text)
-            cat ../urls.txt
-            echo WEBSITE_URL=$WEBSITE_URL >> ../urls.txt
-            cat ../urls.txt
+            cat ~/.env
+            echo WEBSITE_URL=$WEBSITE_URL >> ~/.env
+            cat ~/.env
             
       - persist_to_workspace:
           root: ~/
           paths:
-            - project/urls.txt
+            - .env
           
       # Rollback on failure
       - destroy-environment
@@ -434,16 +434,16 @@ jobs:
           name: Get backend url
           command: |
             ls -al
-            cat urls.txt
-            # export the variables from the urls.txt
-            export $(grep BACKEND_IP urls.txt)
-            export $(grep WEBSITE_URL urls.txt)
+            cat ~/.env
+            # export the variables from the ~/.env
+            export $(grep BACKEND_IP ~/.env)
+            export $(grep WEBSITE_URL ~/.env)
 
       - run:
           name: Backend smoke test.
           command: |
-            cat urls.txt
-            export $(grep BACKEND_IP urls.txt)
+            cat ~/.env
+            export $(grep BACKEND_IP ~/.env)
             echo $BACKEND_IP
             curl http://${BACKEND_IP}:3030/api/status | tee test_be.txt
             grep ok test_be.txt
@@ -457,8 +457,8 @@ jobs:
       - run:
           name: Frontend smoke test.
           command: |
-            cat urls.txt
-            export $(grep WEBSITE_URL urls.txt)
+            cat ~/.env
+            export $(grep WEBSITE_URL ~/.env)
             echo $WEBSITE_URL
             curl ${WEBSITE_URL} | tee test_fe.txt
             grep Welcome test_fe.txt
@@ -481,40 +481,61 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            yum install -y gcc-c++ make curl;
+            yum install -y gcc-c++ make curl tar gzip;
             curl -sL https://rpm.nodesource.com/setup_15.x | bash -;
             yum install nodejs -y;
+      - run:
+          name: Get last exported workflow ID from cloudfront stack
+          command: |
+            export OldWorkflowID=$(aws cloudformation list-exports --query "Exports[?Name==\`ID\`].Value" --no-paginate --output text)
+            echo OldWorkflowID=$OldWorkflowID >> ~/.env
+
       - run:
           name: Update cloudfront distribution
           command: |
             cd cf-stacks
             aws cloudformation deploy \
-            --stack-name cloud-front-stack-${CIRCLE_WORKFLOW_ID} \
+            --stack-name udapeople-cloud-front-stack \
             --template-file cloudfront.yml \
-            --parameter-overrides ID=${CIRCLE_WORKFLOW_ID} 
+            --parameter-overrides ID=${CIRCLE_WORKFLOW_ID}
+
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - .env
 
       # Rollback on failure 
       - destroy-environment
       - revert-migrations
 
-# cleanup:
-#     docker:
-#       # Docker image here
-#     steps:
-#       # Checkout code from git
-#       - run:
-#           name: Get old stack workflow id
-#           command: |
-#             # your code here
-#             export OldWorkflowID="the id here"
-#             export STACKS=[] #put the list of stacks here
-#       - run:
-#           name: Remove old stacks and files
-#           command: |
-#             if [[ "${STACKS[@]}" =~ "${OldWorkflowID}" ]]
-#             then
-#               # your code here
-#             fi
+  cleanup:
+    <<: *amazoncli_image
+    steps:
+      - checkout
+
+      - run:
+          name: Install nodejs
+          command: |
+            yum install tar gzip -y
+      
+      - attach_workspace:
+          at: ~/
+
+      - run:
+          name: Get old stack workflow id
+          command: |
+            STACKS=$(aws cloudformation list-stacks --query "StackSummaries[*].StackName" --stack-status-filter CREATE_COMPLETE --no-paginate --output text)
+            echo STACKS=$STACKS >> ~/.env
+
+      - run:
+          name: Remove old EC2 and S3 stacks
+          command: |
+            export STACKS="$(grep STACKS ~/.env)"
+            export "$(grep OldWorkflowID ~/.env)"
+            if [[ "${STACKS[@]}" =~ "${OldWorkflowID}" ]]
+            then
+              ./clear-resource.sh $OldWorkflowID
+            fi
 
 workflows:
   default:
@@ -533,7 +554,7 @@ workflows:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
           filters:
             branches:
-              only: [develop, test-feature-branch, update-cloudfront]
+              only: [develop, test-feature-branch, clean-up]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
       - run-migrations:
@@ -546,5 +567,5 @@ workflows:
           requires: [deploy-backend, deploy-frontend]
       - cloudfront-update:
           requires: [smoke-test]
-      # - cleanup:
-      #     requires: [cloudfront-update]
+      - cleanup:
+          requires: [cloudfront-update]
