@@ -7,25 +7,30 @@ Parameters:
     Description: Title of the project stack will be applied to
     Type: String
     Default: Udapeople
-  EnvironmentName:
-    Description: The environmnt the the stack is being use in
-    Type: String
-    Default: Dev
   S3BucketName:
     Description: The bucket name that hold app artifacts
     Type: String
-    Default: udapeople-568be999-1831-473c-9750-d7d4ccb70533
+    Default: udapeople
+  BucketID:
+    Description: A random string to make bucket name unique
+    Type: String
     
  
 Resources:
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Ref S3BucketName
-     
+      BucketName: !Sub ${S3BucketName}-${BucketID}
+
 Outputs:
   S3BucketName:
     Description: The name of the S3 bucket
     Value: !Ref S3Bucket
     Export:
-      Name: !Sub ${ProjectName}-${EnvironmentName}-S3-BucketName
+      Name: !Sub ${ProjectName}-Initial-S3-BucketName
+
+  S3DomainName:
+    Description: Origin url for access the bucket, origin to cloudfront
+    Value: !GetAtt S3Bucket.DomainName
+    Export:
+      Name: !Sub ${ProjectName}-Initial-S3-DomainName
