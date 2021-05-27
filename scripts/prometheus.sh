@@ -64,3 +64,35 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now node-exporter
+
+# Configure alert manager
+wget https://github.com/prometheus/alertmanager/releases/download/v0.21.0/alertmanager-0.21.0.linux-amd64.tar.gz
+tar xvfz alertmanager-0.21.0.linux-amd64.tar.gz
+cp alertmanager-0.21.0.linux-amd64/{alertmanager,amtool} /usr/local/bin
+mkdir /var/lib/alertmanager
+cp {alertmanager,rules}.yml /etc/prometheus/;
+chown -R prometheus:prometheus /etc/prometheus
+
+cat > /etc/systemd/system/alertmanager.service <<EOF
+[Unit]
+Description=Alert Manager
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/alertmanager \
+  --config.file=/etc/prometheus/alertmanager.yml \
+  --storage.path=/var/lib/alertmanager
+
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload;
+systemctl enable alertmanager;
+systemctl start alertmanager
