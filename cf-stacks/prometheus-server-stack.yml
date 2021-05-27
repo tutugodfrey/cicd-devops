@@ -33,6 +33,10 @@ Resources:
           ToPort: 9100
           CidrIp: 0.0.0.0/0 # To be changed to VPC Cidr
         - IpProtocol: tcp
+          FromPort: 9093
+          ToPort: 9093
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
