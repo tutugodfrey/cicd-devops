@@ -8,3 +8,9 @@ aws cloudformation update-stack --stack-name s3-stack --template-body file://s3-
 
 # Create cloud front stack
 aws cloudformation create-stack --stack-name cloudfront-stack --template-body file://cloudfront.yml
+
+# Create a prometheus server stack
+create-stack --stack-name prometheus-server --template-body file://cf-stacks/prometheus-server-stack.yml --profile myg
+
+# Delete stack
+aws cloudformation delete-stack --stack-name prometheus-server --profile myg
